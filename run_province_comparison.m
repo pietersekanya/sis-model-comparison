@@ -1,4 +1,3 @@
-
 %% run_province_comparison.m
 % Fit a demographic SIS model separately to Ituri and North Kivu.
 % Include parameter estimation, sensitivity analysis and
@@ -77,6 +76,10 @@ fit_obs_c = cell(np, 1);
 fit_pred_c = cell(np, 1);
 fit_obs_d = cell(np, 1);
 fit_pred_d = cell(np, 1);
+
+% ADDED: largest reporting intervals, for the discussion of unusually
+% large counts (one table per province and series).
+largest = cell(np, 2);
 
 fig_fit = figure('Color', 'w', ...
     'Position', [100 100 1000 650]);
@@ -174,6 +177,23 @@ for q = 1:np
     fit_obs_d{q} = obs_deaths;
     fit_pred_d{q} = pred_deaths;
 
+    % ADDED: largest reporting intervals (cases and deaths per day,
+    % together with the number of days each interval covers).
+    dt_int = diff(tw);                      % days in each reporting interval
+    rate_c = obs_cases ./ dt_int;           % cases per day in each interval
+    rate_d = obs_deaths ./ dt_int;          % deaths per day in each interval
+    z_c = (rate_c - mean(rate_c)) ./ std(rate_c);
+    z_d = (rate_d - mean(rate_d)) ./ std(rate_d);
+
+    largest{q, 1} = top_intervals(S(q).name, 'Cases', ...
+        fit_dates{q}, obs_cases, dt_int, z_c);
+    largest{q, 2} = top_intervals(S(q).name, 'Deaths', ...
+        fit_dates{q}, obs_deaths, dt_int, z_d);
+
+    fprintf(['Reporting intervals (days): min = %g, median = %g, max = %g. ' ...
+        'Intervals more than 2 SD above the mean: %d (cases per day), %d (deaths per day)\n'], ...
+        min(dt_int), median(dt_int), max(dt_int), sum(z_c > 2), sum(z_d > 2));
+
     % Plot cases.
     subplot(2, np, q);
     plot(fit_dates{q}, obs_cases, 'ko', ...
@@ -199,6 +219,19 @@ for q = 1:np
     grid on;
 
 end
+
+%% 3b. LARGEST REPORTING INTERVALS (ADDED)
+
+% The five largest case counts and the five largest death counts in a
+% single reporting interval, for each province, with the length of the
+% interval behind each count. Long intervals suggest that delayed reports
+% were batched together; 1-day intervals suggest a genuine surge or a
+% correction to earlier counts.
+
+largest_all = vertcat(largest{:});
+
+fprintf('\n=== LARGEST REPORTING INTERVALS ===\n');
+disp(largest_all);
 
 %% 4. SENSITIVITY ANALYSIS FOR GAMMA
 
@@ -391,6 +424,10 @@ writetable(cv_summary, fullfile('results', ...
 writetable(cv_by_origin, fullfile('results', ...
     'sis_province_cv_by_origin.csv'));
 
+% ADDED: largest reporting intervals.
+writetable(largest_all, fullfile('results', ...
+    'sis_province_largest_intervals.csv'));
+
 saveas(fig_fit, fullfile('results', ...
     'sis_province_fits.png'));
 
@@ -398,3 +435,15 @@ saveas(fig_cv, fullfile('results', ...
     'sis_province_cv_error.png'));
 
 fprintf('\nAll results saved in the results/ folder.\n');
+
+%% LOCAL FUNCTIONS (must stay at the end of the script)
+
+function T = top_intervals(province, series, dates, obs, dt, z)
+% The five reporting intervals with the largest counts, with their length.
+    [~, ord] = sort(obs, 'descend');
+    k = ord(1:5);
+    T = table(repmat(string(province), 5, 1), repmat(string(series), 5, 1), ...
+        dates(k), obs(k), dt(k), obs(k) ./ dt(k), z(k), ...
+        'VariableNames', {'Province', 'Series', 'Date', 'Count', ...
+        'DaysInInterval', 'PerDay', 'ZScore'});
+end
