@@ -31,7 +31,7 @@ A MATLAB project for Biomathematics 374. A demographic susceptible–infectious�
 2. How well does the model predict future cases and deaths in each province, and does predictive performance differ between the provinces?
 3. How sensitive are these comparisons to the assumed infectious period?
 
-The (non-directional) hypotheses are:
+The hypotheses are:
 
 - **H1:** the disease-related mortality rate, and the model-implied case fatality proportion, differ between the provinces.
 - **H2:** the transmission parameter and the initial reproduction measure differ between the provinces, and the initial reproduction measure is greater than one in both.
@@ -219,5 +219,4 @@ North Kivu had the higher fitted transmission parameter, mortality rate, initial
 
 INRB-UMIE (2026) *BDBV2026-Data: Data and scripts for epidemiological analysis of the 2026 Bundibugyo Ebola outbreak* [dataset]. GitHub. Available at: https://github.com/INRB-UMIE/BDBV2026-Data (Accessed: 12 October 2026). Please see that repository for the terms of use of the data. 
 
-Hethcote, H.W. (2000) The mathematics of infectious diseases. *SIAM Review*, 42(4), pp. 599–653.
 
