@@ -187,7 +187,22 @@ Latest run, data up to 9 October 2026 (the numbers change if the cutoff date or 
 | Cross-validation MAE / RMSE, cases | 56.7 / 69.0 | 11.5 / 13.3 |
 | Cross-validation MAE / RMSE, deaths | 22.1 / 29.6 | 7.9 / 8.8 |
 
+**Comparison between provinces**
+
+Approximate two-sided z-tests, comparing Ituri minus North Kivu:
+
+| Parameter | Difference | Approx. 95% CI | p-value |
+|---|---:|---:|---:|
+| Scaled transmission rate, βN | −0.0869 | −0.1399 to −0.0339 | 0.0013 |
+| Disease-related mortality rate, μ̃ | −0.0741 | −0.1272 to −0.0210 | 0.0062 |
+| Initial reproduction measure, R_start | −0.0452 | −0.0701 to −0.0204 | 0.00036 |
+| Model-implied case fatality proportion | −20.3 percentage points | −32.4 to −8.2 percentage points | 0.0010 |
+
+These are approximate tests conditional on the fixed recovery rate; they should not be interpreted as definitive evidence of differences in the underlying biological processes.
+
 North Kivu had the higher fitted transmission parameter, mortality rate, initial reproduction measure and model-implied case fatality proportion, and this ordering held for infectious periods of 7, 10 and 14 days. Errors are in counts per reporting interval and are larger in Ituri, which reported many more cases and deaths. See the report for the full results and interpretation.
+
+Cross-validation WAPE was 0.84 for cases and 0.83 for deaths in Ituri, compared with 0.57 for cases and 0.78 for deaths in North Kivu. Thus, relative case-forecast errors were larger in Ituri, while relative death-forecast errors were similar. These comparisons are descriptive because the forecast windows overlap and no baseline forecast was evaluated.
 
 ## Limitations
 
@@ -195,7 +210,7 @@ North Kivu had the higher fitted transmission parameter, mortality rate, initial
 - The SIS structure ignores immunity among survivors (fewer than 0.2% of each province's population was reported as cases, so the effect within the study window is small).
 - The data are by report date: reporting delays, batching and under-reporting are not modelled. Some large counts follow multi-day reporting gaps and were kept in the analysis.
 - Cases and deaths not assigned to a health zone are excluded, and the same birth and death rates are used for both provinces.
-- γ is fixed, so the estimates are conditional on the assumed infectious period. The scripts do not compute standard errors or confidence intervals, so differences between the provinces are descriptive unless uncertainty is added.
+- γ is fixed, so the estimates are conditional on the assumed infectious period. The scripts calculate approximate standard errors, confidence intervals and z-tests from the Jacobian. These estimates are conditional on the fixed recovery rate and may understate uncertainty because residuals from cumulative data are autocorrelated and the model does not capture all observed features. The fitted transmission and disease-related mortality parameters remain strongly correlated, so they should be interpreted cautiously.
 - The cross-validation uses only 15 overlapping forecast windows and no baseline forecast.
 - The outbreak is ongoing and later data may differ from those used here.
 
@@ -212,7 +227,7 @@ North Kivu had the higher fitted transmission parameter, mortality rate, initial
 | "Unable to find or open ... .csv" | The data files are not in `data/`, the names differ, or the Current Folder is not the top-level folder |
 | "Fill in pop, birth_rate and death_rate" | `province_settings.m` has not been completed |
 | "Case and death dates do not match." | The loaders were changed separately; the deaths loader takes its dates and cutoff from the cases loader, so keep the zone lists identical |
-| Warnings that a parameter is at a bound | Widen the bound in `run_province_comparison.m` and rerun; if the estimate keeps moving to the new bound, the data do not constrain that parameter |
+| Warnings that a parameter is near a bound | Check whether the estimate is genuinely constrained by the bound and whether it is stable across starting points. Cross-validation fits may produce small initial infectious populations. Do not widen bounds automatically; investigate identifiability and assess whether the change is epidemiologically justified. |
 | Undefined function or variable | A required `.m` file is missing from the top-level folder |
 
 ## References and data citation
