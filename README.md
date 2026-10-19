@@ -161,15 +161,20 @@ Written to `results/` by `run_province_comparison.m`:
 
 | File | Description |
 |---|---|
-| `sis_province_parameters.csv` | Fitted parameters, derived quantities and in-sample MAE and RMSE for each province |
-| `sis_province_gamma_sensitivity.csv` | Fitted values for each assumed infectious period |
-| `sis_province_cv_summary.csv` | Cross-validation errors averaged over the forecast origins |
-| `sis_province_cv_by_origin.csv` | Cross-validation errors at each forecast origin |
-| `sis_province_largest_intervals.csv` | The largest reporting intervals for cases and deaths, with interval length |
+| `sis_province_parameters.csv` | Fitted parameters, derived quantities and in-sample error metrics for each province |
+| `sis_province_parameters_with_se.csv` | Parameter estimates, approximate standard errors and 95% confidence intervals |
+| `sis_province_comparison.csv` | Between-province differences, approximate confidence intervals, z-statistics and p-values |
+| `sis_province_gamma_sensitivity.csv` | Fitted parameters and derived quantities for assumed infectious periods of 7, 10 and 14 days |
+| `sis_province_identifiability.csv` | Condition numbers, maximum absolute parameter correlations and parameters at bounds |
+| `sis_province_cv_summary.csv` | Average leave-future-out cross-validation errors for cases and deaths |
+| `sis_province_cv_by_origin.csv` | Forecast errors at individual forecast origins |
+| `sis_province_largest_intervals.csv` | Five largest reporting intervals for cases and deaths in each province, including interval duration |
 | `sis_province_fits.png` | Observed and fitted cases and deaths per reporting interval |
-| `sis_province_cv_error.png` | Forecast error at each forecast origin |
+| `sis_province_parameters.png` | Parameter estimates with approximate 95% confidence intervals |
+| `sis_province_cv_error.png` | Case and death forecast RMSE across forecast origins |
 
-The optional scripts also write `data/province_cumulative_cases.csv`, `data/province_cumulative_deaths.csv`, `data/province_cases_and_deaths.csv`, `data/province_observed_reporting_intervals.csv` and some figures in `results/`.
+The optional data-checking scripts also generate intermediate CSV files and exploratory figures in `data/` and `results/`.
+
 
 ## Key results
 
