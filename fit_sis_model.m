@@ -61,21 +61,7 @@ end
 p_best = p_fixed;
 p_best(idx) = x_best;
 
-% Warn if a fitted parameter sits on one of its bounds
-names4 = {'betaN', 'gamma', 'mu_tilde', 'I0'};
-tol = 1e-3 * (ub_f - lb_f);
-for j = 1:numel(idx)
-    if abs(x_best(j) - lb_f(j)) < tol(j)
-        warning('fit_sis_model:nearBound', ...
-            'Parameter %s is near its LOWER bound. Estimate = %.6g; bound = %.6g.', ...
-            names4{idx(j)}, x_best(j), lb_f(j));
-    elseif abs(x_best(j) - ub_f(j)) < tol(j)
-        warning('fit_sis_model:nearBound', ...
-            'Parameter %s is near its UPPER bound. Estimate = %.6g; bound = %.6g.', ...
-            names4{idx(j)}, x_best(j), ub_f(j));
-    end
-end
-end
+
 
 
 function r = interval_residuals(x, idx, p_fixed, t, cum_obs, deaths_obs, N, b, mu)
@@ -93,4 +79,3 @@ if ~isempty(deaths_obs)
 end
 
 r(~isfinite(r)) = 1e3;                   % penalise failed simulations
-end
