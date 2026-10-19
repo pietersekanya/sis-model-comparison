@@ -24,6 +24,7 @@ function [p_best, ssr_best, res_best, J_best] = fit_sis_model( ...
 %     ssr_best = sum of squared residuals
 %     res_best = residual vector at the optimum (cases first, then deaths)
 %     J_best   = Jacobian with respect to the FITTED parameters only
+%                (used for approximate standard errors)
 
 idx  = find(free);
 lb_f = lb(idx);
@@ -60,31 +61,18 @@ end
 p_best = p_fixed;
 p_best(idx) = x_best;
 
-
 % Warn if a fitted parameter sits on one of its bounds
+names4 = {'betaN', 'gamma', 'mu_tilde', 'I0'};
 tol = 1e-3 * (ub_f - lb_f);
-near_lower = abs(x_best - lb_f) < tol;
-near_upper = abs(x_best - ub_f) < tol;
-at_bound = near_lower | near_upper;
-
-if any(at_bound)
-    names4 = {'betaN', 'gamma', 'mu_tilde', 'I0'};
-    names_fitted = names4(idx);
-
-    for j = find(at_bound)
-        if near_lower(j)
-            bound_type = 'LOWER';
-            bound_value = lb_f(j);
-        else
-            bound_type = 'UPPER';
-            bound_value = ub_f(j);
-        end
-
-        warning('fit_sis_model:atBound', ...
-            ['Parameter %s is near its %s bound. ' ...
-            'Estimate = %.6g; bound = %.6g.'], ...
-            names_fitted{j}, bound_type, ...
-            x_best(j), bound_value);
+for j = 1:numel(idx)
+    if abs(x_best(j) - lb_f(j)) < tol(j)
+        warning('fit_sis_model:nearBound', ...
+            'Parameter %s is near its LOWER bound. Estimate = %.6g; bound = %.6g.', ...
+            names4{idx(j)}, x_best(j), lb_f(j));
+    elseif abs(x_best(j) - ub_f(j)) < tol(j)
+        warning('fit_sis_model:nearBound', ...
+            'Parameter %s is near its UPPER bound. Estimate = %.6g; bound = %.6g.', ...
+            names4{idx(j)}, x_best(j), ub_f(j));
     end
 end
 end

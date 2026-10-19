@@ -1,6 +1,8 @@
 %% run_province_comparison.m
 % Fit a demographic SIS model separately to Ituri and North Kivu.
-% Include parameter estimation, sensitivity analysis and
+% Includes parameter estimation with approximate standard errors, a
+% comparison of the parameters between the provinces (approximate z-tests),
+% identifiability diagnostics, sensitivity analysis and
 % leave-future-out cross-validation.
 %
 % Required files:
@@ -22,6 +24,8 @@ rng(1);
 % gamma    = recovery rate, units 1/day
 % mu_tilde = disease-related mortality rate, units 1/day
 % I0       = initial infected individuals, units people
+
+names4 = {'betaN', 'gamma', 'mu_tilde', 'I0'};
 
 free = [true, false, true, true];
 p_fixed = [NaN, 1/10, NaN, NaN];
@@ -57,12 +61,27 @@ t = days(report_date - report_date(1));
 n = numel(t);
 np = numel(S);
 
+if np ~= 2
+    error('The comparison between provinces assumes exactly two provinces.');
+end
+
 %% 3. FIT THE MAIN MODEL TO EACH PROVINCE
 
-% Results include parameter estimates, derived quantities,
-% and in-sample MAE and RMSE for cases and deaths.
+% Results include parameter estimates, approximate standard errors,
+% derived quantities, and in-sample MAE, RMSE and WAPE for cases and deaths.
 
 results = table();
+
+% Derived quantities as functions of the full parameter vector
+Rfun   = @(pp) pp(1) / (pp(2) + pp(3));      % initial reproduction measure
+CFRfun = @(pp) pp(3) / (pp(2) + pp(3));      % model-implied case fatality proportion
+
+% Estimates and approximate standard errors.
+% Columns: betaN, gamma, mu_tilde, I0, R_start, CFR
+est = nan(np, 6);
+se  = zeros(np, 6);
+cond_main = zeros(np, 1);
+corr_main = cell(np, 1);
 
 % Save each province's fitting window for sensitivity analysis and CV.
 start_idx = zeros(np, 1);
@@ -77,7 +96,7 @@ fit_pred_c = cell(np, 1);
 fit_obs_d = cell(np, 1);
 fit_pred_d = cell(np, 1);
 
-% ADDED: largest reporting intervals, for the discussion of unusually
+% Largest reporting intervals, for the discussion of unusually
 % large counts (one table per province and series).
 largest = cell(np, 2);
 
@@ -116,7 +135,7 @@ for q = 1:np
     fprintf('\n=== MAIN FIT: %s ===\n', S(q).name);
 
     % Estimate betaN, mu_tilde and I0; gamma is fixed at 1/10.
-    p_hat = fit_sis_model( ...
+    [p_hat, ~, res, J] = fit_sis_model( ...
         tw, cases, deaths, S(q).N, S(q).b, S(q).mu, ...
         p_fixed, free, lb, ub, n_starts);
 
@@ -126,8 +145,24 @@ for q = 1:np
     I0 = p_hat(4);
 
     beta = betaN / S(q).N;
-    R_start = betaN / (gamma + mu_tilde);
-    CFR = mu_tilde / (gamma + mu_tilde);
+    R_start = Rfun(p_hat);
+    CFR = CFRfun(p_hat);
+
+    % Approximate standard errors from the Jacobian at the optimum
+    % (Gauss-Newton approximation), and by the delta method for the
+    % derived quantities.
+    [C_cov, R_corr, cond_JTJ] = parameter_covariance(res, J);
+
+    se4 = zeros(1, 4);
+    se4(free) = sqrt(max(diag(C_cov), 0))';
+
+    se_R = delta_se(Rfun, p_hat, free, C_cov);
+    se_CFR = delta_se(CFRfun, p_hat, free, C_cov);
+
+    est(q, :) = [p_hat, R_start, CFR];
+    se(q, :)  = [se4, se_R, se_CFR];
+    cond_main(q) = cond_JTJ;
+    corr_main{q} = R_corr;
 
     % Simulate cumulative cases and deaths.
     [C_fit, D_fit] = simulate_sis_cum( ...
@@ -146,27 +181,41 @@ for q = 1:np
     MAE_deaths = mean(abs(pred_deaths - obs_deaths));
     RMSE_deaths = sqrt(mean((pred_deaths - obs_deaths).^2));
 
+    % Weighted absolute percentage error (scale-free):
+    % sum of absolute errors divided by the sum of observed counts.
+    WAPE_cases = sum(abs(pred_cases - obs_cases)) / sum(obs_cases);
+    WAPE_deaths = sum(abs(pred_deaths - obs_deaths)) / max(sum(obs_deaths), eps);
+
     % Print estimates and fit metrics.
-    fprintf('betaN       = %.5g per day\n', betaN);
+    fprintf('betaN       = %.5g per day (SE %.3g)\n', betaN, se4(1));
     fprintf('beta        = %.5g per person per day\n', beta);
     fprintf('gamma       = %.5g per day (fixed)\n', gamma);
-    fprintf('mu_tilde    = %.5g per day\n', mu_tilde);
-    fprintf('I0          = %.5g people\n', I0);
-    fprintf('R_start     = %.5g\n', R_start);
-    fprintf('Model CFR   = %.2f%%\n', 100*CFR);
+    fprintf('mu_tilde    = %.5g per day (SE %.3g)\n', mu_tilde, se4(3));
+    fprintf('I0          = %.5g people (SE %.3g)\n', I0, se4(4));
+    fprintf('R_start     = %.5g (SE %.3g)\n', R_start, se_R);
+    fprintf('Model CFR   = %.2f%% (SE %.2f percentage points)\n', 100*CFR, 100*se_CFR);
 
-    fprintf('Cases:  MAE = %.3f, RMSE = %.3f\n', ...
-        MAE_cases, RMSE_cases);
-    fprintf('Deaths: MAE = %.3f, RMSE = %.3f\n', ...
-        MAE_deaths, RMSE_deaths);
+    fprintf('Cases:  MAE = %.3f, RMSE = %.3f, WAPE = %.3f\n', ...
+        MAE_cases, RMSE_cases, WAPE_cases);
+    fprintf('Deaths: MAE = %.3f, RMSE = %.3f, WAPE = %.3f\n', ...
+        MAE_deaths, RMSE_deaths, WAPE_deaths);
+
+    % Identifiability check for the main fit.
+    fprintf('Identifiability: cond(J''J) = %.2e\n', cond_JTJ);
+    if numel(R_corr) > 1
+        disp(array2table(R_corr, 'VariableNames', names4(free), ...
+            'RowNames', names4(free)));
+    end
 
     % Store results.
     new_row = table(string(S(q).name), betaN, beta, gamma, ...
         mu_tilde, I0, R_start, CFR, ...
-        MAE_cases, RMSE_cases, MAE_deaths, RMSE_deaths, ...
+        MAE_cases, RMSE_cases, WAPE_cases, ...
+        MAE_deaths, RMSE_deaths, WAPE_deaths, ...
         'VariableNames', {'Province', 'betaN', 'beta', ...
         'gamma', 'mu_tilde', 'I0', 'R_start', 'CFR', ...
-        'MAE_cases', 'RMSE_cases', 'MAE_deaths', 'RMSE_deaths'});
+        'MAE_cases', 'RMSE_cases', 'WAPE_cases', ...
+        'MAE_deaths', 'RMSE_deaths', 'WAPE_deaths'});
 
     results = [results; new_row];
 
@@ -177,7 +226,7 @@ for q = 1:np
     fit_obs_d{q} = obs_deaths;
     fit_pred_d{q} = pred_deaths;
 
-    % ADDED: largest reporting intervals (cases and deaths per day,
+    % Largest reporting intervals (cases and deaths per day,
     % together with the number of days each interval covers).
     dt_int = diff(tw);                      % days in each reporting interval
     rate_c = obs_cases ./ dt_int;           % cases per day in each interval
@@ -220,7 +269,7 @@ for q = 1:np
 
 end
 
-%% 3b. LARGEST REPORTING INTERVALS (ADDED)
+%% 3b. LARGEST REPORTING INTERVALS
 
 % The five largest case counts and the five largest death counts in a
 % single reporting interval, for each province, with the length of the
@@ -232,6 +281,62 @@ largest_all = vertcat(largest{:});
 
 fprintf('\n=== LARGEST REPORTING INTERVALS ===\n');
 disp(largest_all);
+
+%% 3c. COMPARISON OF THE PROVINCES (APPROXIMATE Z-TESTS)
+
+% Difference between the provinces (first minus second) for each parameter,
+% using the approximate standard errors above and assuming that the two
+% estimates are independent. These tests are approximate: the residuals
+% from cumulative data are autocorrelated and the model does not capture
+% every feature of the data, so the standard errors are probably too small.
+
+col_names = {'betaN', 'gamma', 'mu_tilde', 'I0', 'R_start', 'CFR'};
+
+d_est = est(1, :) - est(2, :);
+d_se  = sqrt(se(1, :).^2 + se(2, :).^2);
+d_lo  = d_est - 1.96 * d_se;
+d_hi  = d_est + 1.96 * d_se;
+z     = d_est ./ d_se;
+z(d_se == 0) = NaN;                       % parameters that are fixed
+pval  = erfc(abs(z) / sqrt(2));           % two-sided normal p-value
+
+comparison = table(col_names', est(1, :)', est(2, :)', ...
+    d_est', d_se', d_lo', d_hi', z', pval', ...
+    'VariableNames', {'Parameter', ...
+    [S(1).column '_Estimate'], [S(2).column '_Estimate'], ...
+    'Difference', 'SE_Difference', 'CI_Lower', 'CI_Upper', 'z', 'p_value'});
+
+fprintf('\n=== COMPARISON OF PARAMETERS (%s minus %s) ===\n', ...
+    S(1).name, S(2).name);
+disp(comparison);
+
+% Long-format table of estimates with approximate 95% intervals.
+Prov = {};  Par = {};  Est = [];  SEv = [];
+for q = 1:np
+    for j = 1:numel(col_names)
+        Prov{end+1, 1} = S(q).name;             %#ok<SAGROW>
+        Par{end+1, 1}  = col_names{j};          %#ok<SAGROW>
+        Est(end+1, 1)  = est(q, j);             %#ok<SAGROW>
+        SEv(end+1, 1)  = se(q, j);              %#ok<SAGROW>
+    end
+end
+params_ci = table(Prov, Par, Est, SEv, Est - 1.96*SEv, Est + 1.96*SEv, ...
+    'VariableNames', {'Province', 'Parameter', 'Estimate', 'SE', ...
+    'CI_Lower', 'CI_Upper'});
+
+% Plot the estimates with approximate 95% intervals.
+fig_par = figure('Color', 'w', 'Position', [100 100 900 650]);
+plot_cols = [1 3 5 6];                 % betaN, mu_tilde, R_start, CFR
+for j = 1:4
+    subplot(2, 2, j);
+    col = plot_cols(j);
+    errorbar(1:np, est(:, col), 1.96 * se(:, col), 'o', 'LineWidth', 1.5);
+    xlim([0.5, np + 0.5]);
+    xticks(1:np);
+    xticklabels({S.name});
+    title(col_names{col});
+    grid on;
+end
 
 %% 4. SENSITIVITY ANALYSIS FOR GAMMA
 
@@ -280,6 +385,47 @@ sens_table = table( ...
 
 disp(sens_table);
 
+%% 4b. IDENTIFIABILITY DIAGNOSTICS
+
+% Why gamma is fixed: refit the CASES ONLY with betaN, gamma, mu_tilde and
+% I0 all estimated, and compare with the main fit (cases and deaths,
+% gamma fixed). A very large condition number and correlations close to +1
+% or -1 mean that the parameters cannot be estimated separately.
+
+free_all = true(1, 4);
+p_fixed_all = [NaN, NaN, NaN, NaN];
+
+diag_rows = {};
+ws = warning('off', 'all');            % bound warnings are expected here
+
+fprintf('\n=== IDENTIFIABILITY DIAGNOSTICS ===\n');
+
+for q = 1:np
+    [p_c, ~, res_c, J_c] = fit_sis_model( ...
+        tw_all{q}, cw_all{q}, [], S(q).N, S(q).b, S(q).mu, ...
+        p_fixed_all, free_all, lb, ub, n_starts);
+    [~, R_c, cond_c] = parameter_covariance(res_c, J_c);
+    max_corr_c = max(abs(R_c(~eye(4))));
+
+    at_bound = abs(p_c - lb) < 1e-3 * (ub - lb) | abs(p_c - ub) < 1e-3 * (ub - lb);
+
+    R_m = corr_main{q};
+    max_corr_m = max(abs(R_m(~eye(size(R_m)))));
+
+    diag_rows(end+1, :) = {S(q).name, ...
+        'Cases only; betaN, gamma, mu_tilde, I0 estimated', ...
+        cond_c, max_corr_c, strjoin(names4(at_bound), ', ')}; %#ok<SAGROW>
+    diag_rows(end+1, :) = {S(q).name, ...
+        'Cases and deaths; gamma fixed; betaN, mu_tilde, I0 estimated', ...
+        cond_main(q), max_corr_m, 'none'}; %#ok<SAGROW>
+end
+
+warning(ws);
+
+diag_table = cell2table(diag_rows, 'VariableNames', ...
+    {'Province', 'Fit', 'ConditionNumber', 'LargestAbsCorrelation', 'ParametersAtBounds'});
+disp(diag_table);
+
 %% 5. LEAVE-FUTURE-OUT CROSS-VALIDATION
 
 % At each forecast origin, fit only to data available up to that date.
@@ -296,8 +442,10 @@ n_origins = numel(origins);
 
 mae_cv_c = nan(n_origins, np);
 rmse_cv_c = nan(n_origins, np);
+wape_cv_c = nan(n_origins, np);
 mae_cv_d = nan(n_origins, np);
 rmse_cv_d = nan(n_origins, np);
+wape_cv_d = nan(n_origins, np);
 
 fprintf('\n=== LEAVE-FUTURE-OUT CROSS-VALIDATION ===\n');
 
@@ -340,9 +488,13 @@ for q = 1:np
 
         mae_cv_c(k,q) = mean(abs(err_c));
         rmse_cv_c(k,q) = sqrt(mean(err_c.^2));
+        wape_cv_c(k,q) = sum(abs(err_c)) / max(sum(obs_c), eps);
 
         mae_cv_d(k,q) = mean(abs(err_d));
         rmse_cv_d(k,q) = sqrt(mean(err_d.^2));
+        if sum(obs_d) > 0
+            wape_cv_d(k,q) = sum(abs(err_d)) / sum(obs_d);
+        end
 
     end
 
@@ -354,12 +506,14 @@ cv_summary = table( ...
     string({S.name})', ...
     mean(mae_cv_c, 1, 'omitnan')', ...
     mean(rmse_cv_c, 1, 'omitnan')', ...
+    mean(wape_cv_c, 1, 'omitnan')', ...
     mean(mae_cv_d, 1, 'omitnan')', ...
     mean(rmse_cv_d, 1, 'omitnan')', ...
+    mean(wape_cv_d, 1, 'omitnan')', ...
     sum(~isnan(mae_cv_c), 1)', ...
     'VariableNames', {'Province', ...
-    'CV_MAE_cases', 'CV_RMSE_cases', ...
-    'CV_MAE_deaths', 'CV_RMSE_deaths', ...
+    'CV_MAE_cases', 'CV_RMSE_cases', 'CV_WAPE_cases', ...
+    'CV_MAE_deaths', 'CV_RMSE_deaths', 'CV_WAPE_deaths', ...
     'Origins_used'});
 
 disp(cv_summary);
@@ -369,13 +523,17 @@ cv_by_origin = table( ...
     report_date(origins), ...
     mae_cv_c(:,1), mae_cv_c(:,2), ...
     rmse_cv_c(:,1), rmse_cv_c(:,2), ...
+    wape_cv_c(:,1), wape_cv_c(:,2), ...
     mae_cv_d(:,1), mae_cv_d(:,2), ...
     rmse_cv_d(:,1), rmse_cv_d(:,2), ...
+    wape_cv_d(:,1), wape_cv_d(:,2), ...
     'VariableNames', {'ForecastOrigin', ...
     'MAE_cases_Ituri', 'MAE_cases_NorthKivu', ...
     'RMSE_cases_Ituri', 'RMSE_cases_NorthKivu', ...
+    'WAPE_cases_Ituri', 'WAPE_cases_NorthKivu', ...
     'MAE_deaths_Ituri', 'MAE_deaths_NorthKivu', ...
-    'RMSE_deaths_Ituri', 'RMSE_deaths_NorthKivu'});
+    'RMSE_deaths_Ituri', 'RMSE_deaths_NorthKivu', ...
+    'WAPE_deaths_Ituri', 'WAPE_deaths_NorthKivu'});
 
 %% 6. PLOT CROSS-VALIDATION PERFORMANCE
 
@@ -415,8 +573,17 @@ end
 writetable(results, fullfile('results', ...
     'sis_province_parameters.csv'));
 
+writetable(params_ci, fullfile('results', ...
+    'sis_province_parameters_with_se.csv'));
+
+writetable(comparison, fullfile('results', ...
+    'sis_province_comparison.csv'));
+
 writetable(sens_table, fullfile('results', ...
     'sis_province_gamma_sensitivity.csv'));
+
+writetable(diag_table, fullfile('results', ...
+    'sis_province_identifiability.csv'));
 
 writetable(cv_summary, fullfile('results', ...
     'sis_province_cv_summary.csv'));
@@ -424,12 +591,14 @@ writetable(cv_summary, fullfile('results', ...
 writetable(cv_by_origin, fullfile('results', ...
     'sis_province_cv_by_origin.csv'));
 
-% ADDED: largest reporting intervals.
 writetable(largest_all, fullfile('results', ...
     'sis_province_largest_intervals.csv'));
 
 saveas(fig_fit, fullfile('results', ...
     'sis_province_fits.png'));
+
+saveas(fig_par, fullfile('results', ...
+    'sis_province_parameters.png'));
 
 saveas(fig_cv, fullfile('results', ...
     'sis_province_cv_error.png'));
@@ -437,6 +606,37 @@ saveas(fig_cv, fullfile('results', ...
 fprintf('\nAll results saved in the results/ folder.\n');
 
 %% LOCAL FUNCTIONS (must stay at the end of the script)
+
+function [C, R, kappa] = parameter_covariance(res, J)
+% Approximate covariance, correlation and conditioning of the fitted
+% parameters from the Jacobian at the optimum (Gauss-Newton approximation).
+    J   = full(J);
+    n   = numel(res);
+    k   = size(J, 2);
+    s2  = sum(res.^2) / max(n - k, 1);
+    JTJ = J' * J;
+    C   = s2 * pinv(JTJ);
+    d   = sqrt(max(diag(C), eps));
+    R   = C ./ (d * d');
+    kappa = cond(JTJ);
+end
+
+function se = delta_se(fun, p_hat, free, C_cov)
+% Standard error of a function of the parameters (delta method, numerical
+% gradient with respect to the fitted parameters).
+    f0 = fun(p_hat);
+    g  = zeros(1, numel(p_hat));
+    for i = find(free)
+        step = 1e-6 * max(abs(p_hat(i)), 1e-3);
+        pp = p_hat;
+        pp(i) = pp(i) + step;
+        g(i) = (fun(pp) - f0) / step;
+    end
+    n_par = numel(p_hat);
+    cov_full = zeros(n_par, n_par);
+    cov_full(free, free) = C_cov;
+    se = sqrt(max(g * cov_full * g', 0));
+end
 
 function T = top_intervals(province, series, dates, obs, dt, z)
 % The five reporting intervals with the largest counts, with their length.

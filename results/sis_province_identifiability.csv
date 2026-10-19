@@ -1,0 +1,5 @@
+Province,Fit,ConditionNumber,LargestAbsCorrelation,ParametersAtBounds
+Ituri,"Cases only; betaN, gamma, mu_tilde, I0 estimated",4.97472150673234e+17,0.999999935798321,"gamma, mu_tilde"
+Ituri,"Cases and deaths; gamma fixed; betaN, mu_tilde, I0 estimated",4183607313.4403,0.993425081487786,"none"
+North Kivu,"Cases only; betaN, gamma, mu_tilde, I0 estimated",107896460621218,0.999994273887347,"gamma, mu_tilde"
+North Kivu,"Cases and deaths; gamma fixed; betaN, mu_tilde, I0 estimated",35918120.578637,0.998857279054406,"none"
